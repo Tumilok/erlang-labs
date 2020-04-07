@@ -11,24 +11,30 @@
 
 -compile(export_all).
 
-
+%  record contains the information about station
 -record(station, {coords, name}).
+% record contains the information about measurement
 -record(measurement, {type, date}).
 
+% function prints error message
 writeMessage(name) -> io:format("Error, Name must be a list");
 writeMessage(coords) -> io:format("Error, Coordinates must be a tuple");
 writeMessage(type) -> io:format("Error, Type must be a list ~n");
 writeMessage(date) -> io:format("Error, Date must be a tuple ~n");
+writeMessage(hour) -> io:format("Error, Hour must be a integer ~n");
 writeMessage(val) -> io:format("Error, Val must be a integer or float ~n");
 writeMessage(monitor) -> io:format("Error, Monitor is empty ~n").
 
+% function creates new monitor
 createMonitor() -> maps:new().
 
+% function uses an argument key to find the full key of data
 getStationKey([], _) -> null;
 getStationKey([#station{name=Key, coords=Coords}|_], Key) -> #station{name=Key, coords=Coords};
 getStationKey([#station{name=Name, coords=Key}|_], Key) -> #station{name=Name, coords=Key};
 getStationKey([_|T], Key) -> getStationKey(T, Key).
 
+% function adds new station to the given monitor
 addStation(Name, _, _) when not is_list(Name) -> writeMessage(name);
 addStation(_, Coords, _) when not is_tuple(Coords) -> writeMessage(error);
 addStation(Name, Coords, Monitor) ->
@@ -42,6 +48,8 @@ addStation(Name, Coords, Monitor) ->
       Monitor
   end.
 
+% function finds station with the help of key
+% and adds given measurement to it
 addValue(_, _, Type, _, _) when not is_list(Type) -> writeMessage(type);
 addValue(_, _, _, Val, _) when not (is_integer(Val) or is_float(Val)) -> writeMessage(val);
 addValue(_, _, _, _, Monitor) when Monitor == #{} -> writeMessage(monitor);
@@ -63,7 +71,8 @@ addValue(Key, Date, Type, Val, Monitor) ->
       end
   end.
 
-
+% function finds measurement with the help of provided information
+% and removes it from the station map
 removeValue(_, _, Type, _) when not is_list(Type) -> writeMessage(type);
 removeValue(_, _, _, Monitor) when Monitor == #{} -> writeMessage(monitor);
 removeValue(Key, Date, Type, Monitor) ->
@@ -81,6 +90,8 @@ removeValue(Key, Date, Type, Monitor) ->
       end
   end.
 
+% function finds measurement with the help of provided information
+% and returns it's value
 getOneValue(_, _, Type, _) when not is_list(Type) -> writeMessage(type);
 getOneValue(_, _, _, Monitor) when Monitor == #{} -> writeMessage(monitor);
 getOneValue(Key, Date, Type, Monitor) ->
@@ -97,6 +108,8 @@ getOneValue(Key, Date, Type, Monitor) ->
       end
   end.
 
+% function finds station with the help of provided key
+% and runs getStationMeanByType function
 getStationMean(_, Type, _) when not is_list(Type) -> writeMessage(type);
 getStationMean(_, _, Monitor) when Monitor == #{} -> writeMessage(monitor);
 getStationMean(Key, Type, Monitor) ->
@@ -105,33 +118,134 @@ getStationMean(Key, Type, Monitor) ->
     error -> io:format("Station doesn't exist ~n"),
       error;
     {ok, Measurement} ->
-      getMeanByType(maps:to_list(Measurement), Type, 0, 0)
+      getStationMeanByType(maps:to_list(Measurement), Type, 0, 0)
   end.
 
-getMeanByType([], _, Sum, Size) when Size > 0 -> Sum / Size;
-getMeanByType([H|T], Type, Sum, Size) ->
-  case H of
-    {#measurement{type=Type}, Val} -> getMeanByType(T, Type, Sum+Val, Size+1);
-    _ -> getMeanByType(T, Type, Sum, Size)
-  end.
+% function iterates measurements, checks its
+% type and returns actual mean of all suitable values
+getStationMeanByType([], _, Sum, Size) when Size > 0 -> Sum / Size;
+getStationMeanByType([{#measurement{type=Type}, Val}|T], Type, Sum, Size) ->
+  getStationMeanByType(T, Type, Sum+Val, Size+1);
+getStationMeanByType([_|T], Type, Sum, Size) ->
+  getStationMeanByType(T, Type, Sum, Size).
 
-getDailyMean(Type, _, _) when not is_list(Type) -> writeMessage(type);
-getDailyMean(_, Date, _) when not is_tuple(Date) -> writeMessage(date);
-getDailyMean(_, _, Monitor) when Monitor == #{} -> writeMessage(monitor);
-getDailyMean(Type, Date, Monitor) -> iterateStations(Monitor, maps:keys(Monitor), Type, Date, 0, 0).
-
-iterateStations(_, [], _, _, Sum, Size) when Size > 0 -> Sum / Size;
-iterateStations(Monitor, [H|T], Type, Date, Sum, Size) ->
+% function iterates all stations,
+% runs given function and returns mean
+iterateStationsMean(_, [], _, _, _, Sum, Size) when Size > 0 -> Sum / Size;
+iterateStationsMean(Monitor, [H|T], Fun, Type, Arg, Sum, Size) ->
   {ok, Val} = maps:find(H, Monitor),
-  {MSum, MSize} = getDailyMeanByType(maps:to_list(Val), Type, Date, {0,0}),
-  iterateStations(Monitor, T, Type, Date, Sum + MSum, Size + MSize).
+  {MSum, MSize} = Fun(maps:to_list(Val), Type, Arg, {0,0}),
+  iterateStationsMean(Monitor, T, Fun, Type, Arg, Sum + MSum, Size + MSize).
 
+% function runs recursive function iterateStationsMean
+getDailyMean(Type, _, _) when not is_list(Type) -> writeMessage(type);
+getDailyMean(_, Day, _) when not is_tuple(Day) -> writeMessage(date);
+getDailyMean(_, _, Monitor) when Monitor == #{} -> writeMessage(monitor);
+getDailyMean(Type, Day, Monitor) ->
+  iterateStationsMean(Monitor, maps:keys(Monitor), fun getDailyMeanByType/4, Type, Day, 0, 0).
 
+% function iterates measurements, checks its
+% type and date, and returns sum and size of all suitable values
 getDailyMeanByType([], _, _, {Sum,Size}) -> {Sum,Size};
-getDailyMeanByType([H|T], Type, Date, {Sum,Size}) ->
-  case H of
-    {#measurement{type=Type, date={Date, _}}, Val} -> getDailyMeanByType(T, Type, Date, {Sum+Val,Size+1});
-   _ -> getDailyMeanByType(T, Type, Date, {Sum,Size})
- end.
+getDailyMeanByType([{#measurement{type=Type, date={Day, _}}, Val}|T], Type, Day, {Sum,Size}) ->
+  getDailyMeanByType(T, Type, Day, {Sum+Val,Size+1});
+getDailyMeanByType([_|T], Type, Day, {Sum,Size}) ->
+  getDailyMeanByType(T, Type, Day, {Sum,Size}).
 
+% function runs recursive function iterateStationsMean
+getHourlyMean(Type, _, _) when not is_list(Type) -> writeMessage(type);
+getHourlyMean(_, Hour, _) when not is_integer(Hour) -> writeMessage(hour);
+getHourlyMean(_, _, Monitor) when Monitor == #{} -> writeMessage(monitor);
+getHourlyMean(Type, Hour, Monitor) ->
+  iterateStationsMean(Monitor, maps:keys(Monitor), fun getHourlyMeanByType/4, Type, Hour, 0, 0).
 
+% function iterates measurements, checks its
+% type and hour, and returns sum and size of all suitable values
+getHourlyMeanByType([], _, _, {Sum,Size}) -> {Sum,Size};
+getHourlyMeanByType([{#measurement{type=Type, date={_ ,{Hour,_,_}}}, Val}|T], Type, Hour, {Sum,Size}) ->
+  getHourlyMeanByType(T, Type, Hour, {Sum+Val,Size+1});
+getHourlyMeanByType([_|T], Type, Hour, {Sum,Size}) ->
+  getHourlyMeanByType(T, Type, Hour, {Sum,Size}).
+
+% function runs recursive function finds station and runs countMeasurementsByDay
+getDailyAverageDataCount(_, Date, _) when not is_tuple(Date) -> writeMessage(date);
+getDailyAverageDataCount(Key, Date, Monitor) ->
+  Value = maps:find(getStationKey(maps:keys(Monitor), Key), Monitor),
+  case Value of
+    error -> io:format("Station doesn't exist ~n"),
+      error;
+    {ok, Measurement} -> countMeasurementsByDay(maps:to_list(Measurement), Date, 0)
+  end.
+
+% function iterates measurements, checks its
+% date, and returns amount of all suitable values
+countMeasurementsByDay([], _, Count) -> Count;
+countMeasurementsByDay([{#measurement{date={Date, _}}, _}|T], Date, Count) ->
+  countMeasurementsByDay(T, Date, Count+1);
+countMeasurementsByDay([_|T], Date, Count) ->
+  countMeasurementsByDay(T, Date, Count).
+
+% function runs recursive function iterateStationsDiff
+getMaximumGradientStations(Type, _) when not is_list(Type) -> writeMessage(type);
+getMaximumGradientStations(_, Monitor) when not Monitor == #{} -> writeMessage(monitor);
+getMaximumGradientStations(Type, Monitor) ->
+  iterateStationsDiff(Monitor, maps:keys(Monitor), Type, 100000, -100000).
+
+% function iterates all stations,runs
+% getMaximumGradientStationsByType function and returns
+% maximum gradient of values
+iterateStationsDiff(_, [], _, Min, Max) -> Max - Min;
+iterateStationsDiff(Monitor, [H|T], Type, Min, Max) ->
+  {ok, Val} = maps:find(H, Monitor),
+  {MMin, MMax} = getMaximumGradientStationsByType(maps:to_list(Val), Type, {100000,-100000}),
+  case {MMin < Min, MMax > Max} of
+    {true, true} -> iterateStationsDiff(Monitor, T, Type, MMin, MMax);
+    {true, false} -> iterateStationsDiff(Monitor, T, Type, MMin, Max);
+    {false, true} -> iterateStationsDiff(Monitor, T, Type, Min, MMax);
+    {false, false} -> iterateStationsDiff(Monitor, T, Type, Min, Max)
+  end.
+
+% function iterates measurements, checks its
+% Type, and returns min and max value
+getMaximumGradientStationsByType([], _, {Min, Max}) -> {Min, Max};
+getMaximumGradientStationsByType([{#measurement{type=Type}, Val}|T], Type, {Min, Max}) ->
+  case {Val < Min, Val > Max} of
+    {true, true} -> getMaximumGradientStationsByType(T, Type, {Val, Val});
+    {true, false} -> getMaximumGradientStationsByType(T, Type, {Val, Max});
+    {false, true} -> getMaximumGradientStationsByType(T, Type, {Min, Val});
+    {false, false} -> getMaximumGradientStationsByType(T, Type, {Min, Max})
+  end;
+getMaximumGradientStationsByType([_|T], Type, {Min, Max}) ->
+  getMaximumGradientStationsByType(T, Type, {Min, Max}).
+
+% function runs recursive function iterateStationsLimit
+getDailyOverLimit(Date, _, _, _) when not is_tuple(Date) -> writeMessage(date);
+getDailyOverLimit(_, Type, _, _) when not is_list(Type) -> writeMessage(type);
+getDailyOverLimit(_, _, Limit, _) when not (is_integer(Limit) or is_float(Limit)) -> writeMessage(val);
+getDailyOverLimit(_, _, _, Monitor) when not Monitor == #{} -> writeMessage(monitor);
+getDailyOverLimit(Date, Type, Limit, Monitor) ->
+  iterateStationsLimit(Monitor, maps:keys(Monitor), Date, Type, Limit, 0).
+
+% function iterates all stations,runs
+% isOverLimit function and returns
+% number of stations that exceeded limit
+iterateStationsLimit(_, [], _, _, _, Count) -> Count;
+iterateStationsLimit(Monitor, [H|T], Date, Type, Limit, Count) ->
+  {ok, Val} = maps:find(H, Monitor),
+  IsTrue = isOverLimit(maps:to_list(Val), Date, Type, Limit),
+  case IsTrue of
+    true -> iterateStationsLimit(Monitor, T, Date, Type, Limit, Count+1);
+    false -> iterateStationsLimit(Monitor, T, Date, Type, Limit, Count)
+  end.
+
+% function iterates measurements, checks its
+% Type and Date, and returns true if value
+% of measurement was greater than limit
+isOverLimit([], _, _, _) -> false;
+isOverLimit([{#measurement{type=Type, date={Date, _}}, Val}|T], Date, Type, Limit) ->
+  case Val > Limit of
+    true -> true;
+    false -> isOverLimit(T, Date, Type, Limit)
+  end;
+isOverLimit([_|T], Date, Type, Limit) ->
+  isOverLimit(T, Date, Type, Limit).
