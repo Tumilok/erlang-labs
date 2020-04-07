@@ -25,5 +25,3 @@ sum(A, B) -> A + B.
 sumOfDigits(X) -> lists:foldl(fun sum/2, 0, numToList(X)).
 
 canDivideSumOfDigitsByThree(L) -> filter(fun (X) -> sumOfDigits(X) rem 3 == 0 end, L).
-
-
