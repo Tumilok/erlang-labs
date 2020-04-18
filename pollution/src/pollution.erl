@@ -9,7 +9,22 @@
 -module(pollution).
 -author("tumilok").
 
--compile(export_all).
+%% API
+-export([
+  createMonitor/0,
+  addStation/3,
+  addValue/5,
+  removeValue/4,
+  getOneValue/4,
+  getStationMean/3,
+  getDailyMean/3,
+  getHourlyMean/3,
+  getDailyAverageDataCount/3,
+  getDailyOverLimit/4,
+  getMaximumGradientStations/2,
+  getMinValue/2,
+  getMaxValue/2
+]).
 
 %  record contains the information about station
 -record(station, {coords, name}).
@@ -123,7 +138,8 @@ getStationMean(Key, Type, Monitor) ->
 
 % function iterates measurements, checks its
 % type and returns actual mean of all suitable values
-getStationMeanByType([], _, Sum, Size) when Size > 0 -> Sum / Size;
+getStationMeanByType([], _, _, 0) -> 0.0;
+getStationMeanByType([], _, Sum, Size) -> Sum / Size;
 getStationMeanByType([{#measurement{type=Type}, Val}|T], Type, Sum, Size) ->
   getStationMeanByType(T, Type, Sum+Val, Size+1);
 getStationMeanByType([_|T], Type, Sum, Size) ->
@@ -131,7 +147,8 @@ getStationMeanByType([_|T], Type, Sum, Size) ->
 
 % function iterates all stations,
 % runs given function and returns mean
-iterateStationsMean(_, [], _, _, _, Sum, Size) when Size > 0 -> Sum / Size;
+iterateStationsMean(_, [], _, _, _, _, 0) -> 0.0;
+iterateStationsMean(_, [], _, _, _, Sum, Size) -> Sum / Size;
 iterateStationsMean(Monitor, [H|T], Fun, Type, Arg, Sum, Size) ->
   {ok, Val} = maps:find(H, Monitor),
   {MSum, MSize} = Fun(maps:to_list(Val), Type, Arg, {0,0}),
@@ -250,6 +267,7 @@ getMax(_, Max) -> Max.
 % function iterates all stations,runs
 % getMaximumGradientStationsByType function and returns
 % given function with values min and max
+iterateStationsMinMaxDiff(_, [], _, _, 100000, -100000) -> error;
 iterateStationsMinMaxDiff(_, [], Fun, _, Min, Max) -> Fun(Min, Max);
 iterateStationsMinMaxDiff(Monitor, [H|T], Fun, Type, Min, Max) ->
   {ok, Val} = maps:find(H, Monitor),
